@@ -66,7 +66,7 @@ for video_path in video_paths:
         "filename": video_file_name,
         "length": str(length).strip("b'").strip("\\\\n"),
         "resolution": str(resolution).strip("b'").strip("\\\\n"),
-        "url": image_url.replace("view", ),
+        "url": image_url,
         "size": str(size).strip("b'").strip("\\\\n")
     }
 
