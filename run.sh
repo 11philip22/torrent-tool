@@ -13,10 +13,10 @@ project_location="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pw
 
 # build image if it does not exist
 if [[ "$(docker images -q philipwold/torrent-tool 2> /dev/null)" == "" ]]; then
-	docker build -t philipwold/torrent-tool -f ${project_location}/Dockerfile ${project_location}
+	docker build -t philipwold/torrent-tool -f "${project_location}"/Dockerfile "${project_location}"
 fi
 
-docker run -it --rm \
-	   -e INPUT=${input_folder} -e OUTPUT=${output_folder} \
-	   -v ${input_folder}:${input_folder} -v ${output_folder}:${output_folder} \
+docker run -it --rm --name torrent-tool \
+	   -e INPUT="${input_folder}" -e OUTPUT="${output_folder}" \
+	   -v "${input_folder}":"${input_folder}" -v "${output_folder}":"${output_folder}" \
 	   philipwold/torrent-tool

@@ -1,0 +1,5 @@
+Filename: {{filename}}
+Filesize: {{size}}
+Duration: {{duration}}
+Video: {{video_codec_long}}, {{sample_width}} x {{sample_height}}, {{frame_rate}} FPS, {{display_aspect_ratio}}
+Audio: {{audio_codec}}, {{audio_sample_rate}} Hz, {{audio_bit_rate}} bps
