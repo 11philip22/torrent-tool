@@ -16,7 +16,7 @@ RUN dpkg -i imgupload_0.2.8_amd64.deb \
 	&& rm /imgupload_0.2.8_amd64.deb
 
 # other deps
-RUN apt-get install -y --no-install-recommends ffmpeg
+RUN apt-get install -y --no-install-recommends ffmpeg bc
 # install python
 RUN apt-get install -y --no-install-recommends \
 	python3 \
