@@ -1,16 +1,15 @@
-from os import getenv, system, linesep
+import json
+import math
+from os import getenv, linesep, system
 from pathlib import Path
+from subprocess import call, check_output
+
 from torf import Torrent
-from subprocess import check_output, call
 
 input_folder = getenv("INPUT")
 output_folder = getenv("OUTPUT")
 target_path = Path(input_folder)
 target_name = target_path.stem
-
-
-def byte_to_string(byte_arr):
-    return str(byte_arr).strip("b'").strip("\\\\n")
 
 
 def upload_pic(path):
@@ -88,32 +87,35 @@ for video_path in video_paths:
         # upload screenshot and get url
         screenshot_url = upload_pic(escaped_screenshot_path)
 
-        # get resolution
-        cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 " + escaped_video_path
-        resolution = check_output([cmd, ], shell=True)
+        # get fileinfo json
+        cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(escaped_video_path)
+        file_info = check_output(cmd, shell=True)
+        json_file_info = json.loads(file_info)
+        video_stream_info = json_file_info["streams"][0]
+        audio_stream_info = json_file_info["streams"][1]
+        file_format = json_file_info["format"]
 
-        # get length
-        cmd = "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 " + escaped_video_path
-        length = check_output([cmd, ], shell=True)
+        # get resolution
+        resolution = "{0}x{1}".format(video_stream_info["width"], video_stream_info["height"])
+
+        #  get length
+        length = "{0} S".format(file_format["duration"])
 
         # get size
-        cmd = "du -sh {0} | awk 'NR==1{{print $1}}'".format(escaped_video_path)
-        size = check_output([cmd, ], shell=True)
+        size_bytes = int(file_format["size"])
+        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p, 2)
+        size = "{0} {1}".format(s, size_name[i])
 
-        # get codec
-        cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 {0}".format(
-            escaped_video_path
-        )
-        codec = check_output([cmd, ], shell=True)
+        # get video codec
+        codec = video_stream_info["codec_name"]
 
         # get fps
-        cmd = "ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate {0}".format(
-            escaped_video_path
-        )
-        res = check_output([cmd, ], shell=True)
-        str_res = byte_to_string(res)
-        a, b = str_res.split("/")
-        fps = int(a) / int(b)
+        avg_frame_rate = video_stream_info["avg_frame_rate"]
+        a, b = avg_frame_rate.split("/")
+        fps = str(round(int(a) / int(b)))
 
     except Exception as e:
         print(e)
@@ -121,16 +123,18 @@ for video_path in video_paths:
 
     file_info = {
         "filename": video_file_name,
-        "length": byte_to_string(length),
-        "resolution": byte_to_string(resolution),
-        "size": byte_to_string(size),
-        "codec": byte_to_string(codec),
-        "fps": str(fps),
+        "length": length,
+        "resolution": resolution,
+        "size": size,
+        "codec": codec,
+        "fps": fps,
         "url": image_url,
         "screenshot_url": screenshot_url
     }
     info_list.append(file_info)
 
+# write file
+print("Writing file")
 output_file = Path(output_folder, "{0}.txt".format(target_name))
 with open(output_file, "a") as file:
     file.write("[spoiler=\"fileinfo\"]" + linesep)
@@ -140,7 +144,7 @@ with open(output_file, "a") as file:
         file.write("size: " + file_info["size"] + linesep)
         file.write("codec: " + file_info["codec"] + linesep)
         file.write("resolution: " + file_info["resolution"] + linesep)
-        file.write("length: " + file_info["length"] + " S" + linesep)
+        file.write("length: " + file_info["length"] + linesep)
         file.write("FPS: " + file_info["fps"] + linesep)
         file.write(linesep)
 
@@ -148,7 +152,7 @@ with open(output_file, "a") as file:
     file.write("[spoiler=\"pictures\"]" + linesep)
 
     for file_info in info_list:
-        file.write("[spoiler=\"{0} | {1} S | {2} | 576x320\"]".format(
+        file.write("[spoiler=\"{0} | {1} | {2} | 576x320\"]".format(
             file_info["filename"],
             file_info["length"],
             file_info["size"],
