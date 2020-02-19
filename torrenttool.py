@@ -19,10 +19,53 @@ def upload_pic(path):
     return url
 
 
+def get_file_info(video_file):
+    # get file info json
+    _cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(video_file)
+    json_info = check_output(_cmd, shell=True)
+    json_file_info = json.loads(json_info)
+    video_stream = json_file_info["streams"][0]
+    audio_stream = json_file_info["streams"][1]
+    container = json_file_info["format"]
+
+    # get size
+    size_bytes = int(container["size"])
+    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    size = "{0} {1}".format(s, size_name[i])
+
+    # get fps
+    avg_frame_rate = video_stream["avg_frame_rate"]
+    a, b = avg_frame_rate.split("/")
+    fps = str(round(int(a) / int(b)))
+
+    info_dict = {
+        "filename": video_file_name,
+        "length": "{0} S".format(container["duration"]),
+        "resolution": "{0}x{1}".format(video_stream["width"], video_stream["height"]),
+        "size": size,
+        "video_codec": video_stream["codec_name"],
+        "fps": fps,
+        "url": image_url,
+        "screenshot_url": screenshot_url,
+        "format_name": container["format_long_name"],
+        "video_bitrate": str(video_stream["bit_rate"]),
+        "audio_codec": audio_stream["codec_name"],
+        "audio_sample_rate": str(audio_stream["sample_rate"]),
+        "audio_channels": str(audio_stream["channels"]),
+        "audio_channel_layout": audio_stream["channel_layout"],
+        "audio_bitrate": str(audio_stream["bit_rate"])
+    }
+
+    return info_dict
+
+
 # Remove Metadata folders
 print("Removing 'Metadata' folder")
 cmd = "find {0} -type d -name Metadata -exec rm -rf {{}} \\;".format(target_path)
-system(cmd)
+call('/bin/bash -c "$CMD"', shell=True, env={"CMD": cmd})
 
 # Create torrents
 print("Creating torrent")
@@ -78,8 +121,9 @@ for video_path in video_paths:
 
         # take a screenshot
         if not screenshot_path.is_file():
-            cmd = "input={0}; ffmpeg -ss \"$(bc -l <<< \"$(ffprobe -loglevel error -of csv=p=0 -show_entries format=duration \"$input\")*0.5\")\" -i \"$input\" -frames:v 1 {1}".format(
-                escaped_video_path, escaped_screenshot_path)
+            sub_cmd = "\"$(bc -l <<< \"$(ffprobe -loglevel error -of csv=p=0 -show_entries format=duration \"$input\")*0.5\")\""
+            cmd = "input={0}; ffmpeg -ss {1} -i \"$input\" -frames:v 1 {2}".format(
+                escaped_video_path, sub_cmd, escaped_screenshot_path)
             call('/bin/bash -c "$CMD"', shell=True, env={"CMD": cmd})
 
         # upload roster and get url
@@ -87,51 +131,11 @@ for video_path in video_paths:
         # upload screenshot and get url
         screenshot_url = upload_pic(escaped_screenshot_path)
 
-        # get fileinfo json
-        cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(escaped_video_path)
-        file_info = check_output(cmd, shell=True)
-        json_file_info = json.loads(file_info)
-        video_stream_info = json_file_info["streams"][0]
-        audio_stream_info = json_file_info["streams"][1]
-        file_format = json_file_info["format"]
-
-        # get resolution
-        resolution = "{0}x{1}".format(video_stream_info["width"], video_stream_info["height"])
-
-        #  get length
-        length = "{0} S".format(file_format["duration"])
-
-        # get size
-        size_bytes = int(file_format["size"])
-        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-        i = int(math.floor(math.log(size_bytes, 1024)))
-        p = math.pow(1024, i)
-        s = round(size_bytes / p, 2)
-        size = "{0} {1}".format(s, size_name[i])
-
-        # get video codec
-        codec = video_stream_info["codec_name"]
-
-        # get fps
-        avg_frame_rate = video_stream_info["avg_frame_rate"]
-        a, b = avg_frame_rate.split("/")
-        fps = str(round(int(a) / int(b)))
+        info_list.append(get_file_info(escaped_video_path))
 
     except Exception as e:
         print(e)
         continue
-
-    file_info = {
-        "filename": video_file_name,
-        "length": length,
-        "resolution": resolution,
-        "size": size,
-        "codec": codec,
-        "fps": fps,
-        "url": image_url,
-        "screenshot_url": screenshot_url
-    }
-    info_list.append(file_info)
 
 # write file
 print("Writing file")
@@ -142,17 +146,26 @@ with open(output_file, "a") as file:
     for file_info in info_list:
         file.write("filename: " + file_info["filename"] + linesep)
         file.write("size: " + file_info["size"] + linesep)
-        file.write("codec: " + file_info["codec"] + linesep)
-        file.write("resolution: " + file_info["resolution"] + linesep)
         file.write("length: " + file_info["length"] + linesep)
+        file.write("format: " + file_info["format_name"] + linesep)
+
+        file.write("video codec: " + file_info["video_codec"] + linesep)
+        file.write("resolution: " + file_info["resolution"] + linesep)
         file.write("FPS: " + file_info["fps"] + linesep)
+        file.write("video bit rate: " + file_info["video_bitrate"] + linesep)
+
+        file.write("audio codec: " + file_info["audio_codec"] + linesep)
+        file.write("audio sample rate: " + file_info["audio_sample_rate"] + linesep)
+        file.write("audio channels: " + file_info["audio_channels"] + linesep)
+        file.write("audio channel layout: " + file_info["audio_channel_layout"] + linesep)
+        file.write("audio bit rate: " + file_info["audio_bitrate"] + linesep)
         file.write(linesep)
 
     file.write("[/spoiler]" + linesep)
     file.write("[spoiler=\"pictures\"]" + linesep)
 
     for file_info in info_list:
-        file.write("[spoiler=\"{0} | {1} | {2} | 576x320\"]".format(
+        file.write("[spoiler=\"{0} | {1} | {2} | {3}\"]".format(
             file_info["filename"],
             file_info["length"],
             file_info["size"],
