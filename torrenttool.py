@@ -1,8 +1,8 @@
 import json
 import math
-from os import getenv, linesep, system
+from os import getenv, linesep
 from pathlib import Path
-from subprocess import call, check_output
+from subprocess import TimeoutExpired, call, check_output
 
 from torf import Torrent
 
@@ -12,16 +12,37 @@ target_path = Path(input_folder)
 target_name = target_path.stem
 
 
+def escape(path):
+    return str(path).replace(" ", "\\ ")
+
+
 def upload_pic(path):
-    _cmd = "imgupload -s fastpic.ru -cl plain " + path
-    _res = check_output([_cmd, ], shell=True, )
+    _cmd = "imgupload -s fastpic.ru -cl plain " + escape(path)
+    _res = check_output([_cmd, ], shell=True, timeout=300)
     url = str(_res).strip("b").strip("'")
     return url
 
 
+def make_spoiler(source, target):
+    if not target.is_file():
+        sjabloon = Path("/", "sjabloon")
+        font = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
+        roster_cmd = "vcsi {0} -t -w 1200 -g 4x4 --end-delay-percent 5 --timestamp-font {1} --template {2} -o {3}".format(
+            escape(source), font, sjabloon, escape(target))
+        call('/bin/bash -c "$CMD" > /dev/null 2>&1', shell=True, env={"CMD": roster_cmd})
+
+
+def make_screenshot(source, target):
+    if not target.is_file():
+        sub_cmd = "\"$(bc -l <<< \"$(ffprobe -loglevel error -of csv=p=0 -show_entries format=duration \"$input\")*0.5\")\""
+        screenshot_cmd = "input={0}; ffmpeg -ss {1} -i \"$input\" -frames:v 1 {2}".format(
+            escape(source), sub_cmd, escape(target))
+        call('/bin/bash -c "$CMD"', shell=True, env={"CMD": screenshot_cmd})
+
+
 def get_file_info(video_file):
     # get file info json
-    _cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(video_file)
+    _cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(escape(video_file))
     json_info = check_output(_cmd, shell=True)
     json_file_info = json.loads(json_info)
     video_stream = json_file_info["streams"][0]
@@ -102,39 +123,28 @@ for video_path in video_paths:
     file_name = video_file_name.strip(".mp4") + ".jpg"
 
     screen_path = Path(screens_folder, file_name)
-    escaped_screen_path = str(screen_path).replace(" ", "\\ ")
 
     screenshot_file_name = video_file_name.strip(".mp4") + "_screenshot.jpg"
     screenshot_path = Path(screens_folder, screenshot_file_name)
-    escaped_screenshot_path = str(screenshot_path).replace(" ", "\\ ")
-
-    escaped_video_path = video_path.replace(" ", "\\ ")
 
     try:
         # take a preview roster pic
-        if not screen_path.is_file():
-            sjabloon = Path("/", "sjabloon")
-            font = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
-            cmd = "vcsi {0} -t -w 1200 -g 4x4 --end-delay-percent 5 --timestamp-font {1} --template {2} -o {3}".format(
-                escaped_video_path, font, sjabloon, escaped_screen_path)
-            system("{0} > /dev/null 2>&1".format(cmd))
+        make_spoiler(video_path, screen_path)
 
         # take a screenshot
-        if not screenshot_path.is_file():
-            sub_cmd = "\"$(bc -l <<< \"$(ffprobe -loglevel error -of csv=p=0 -show_entries format=duration \"$input\")*0.5\")\""
-            cmd = "input={0}; ffmpeg -ss {1} -i \"$input\" -frames:v 1 {2}".format(
-                escaped_video_path, sub_cmd, escaped_screenshot_path)
-            call('/bin/bash -c "$CMD"', shell=True, env={"CMD": cmd})
+        make_screenshot(video_path, screenshot_path)
 
         # upload roster and get url
-        image_url = upload_pic(escaped_screen_path)
+        image_url = upload_pic(screen_path)
         # upload screenshot and get url
-        screenshot_url = upload_pic(escaped_screenshot_path)
+        screenshot_url = upload_pic(screenshot_path)
 
-        info_list.append(get_file_info(escaped_video_path))
+        info_list.append(get_file_info(video_path))
 
     except Exception as e:
         print(e)
+        if e is TimeoutExpired:
+            break
         continue
 
 # write file
