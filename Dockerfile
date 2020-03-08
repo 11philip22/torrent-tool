@@ -25,7 +25,7 @@ RUN apt-get install -y --no-install-recommends \
 	python3-wheel
 # install torrenttool script
 COPY Requirements.txt /Requirements.txt
-RUN pip3 install -r Requirements.txt
+RUN pip3 install --no-cache-dir -r Requirements.txt
 COPY sjabloon /sjabloon
 COPY torrenttool.py /torrenttool.py
 

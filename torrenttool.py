@@ -40,6 +40,14 @@ def make_screenshot(source, target):
         call('/bin/bash -c "$CMD"', shell=True, env={"CMD": screenshot_cmd})
 
 
+def convert_byte_size(byte_size):
+    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+    i = int(math.floor(math.log(byte_size, 1024)))
+    p = math.pow(1024, i)
+    s = round(byte_size / p, 2)
+    return "{0} {1}".format(s, size_name[i])
+
+
 def get_file_info(video_file):
     # get file info json
     _cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(escape(video_file))
@@ -51,11 +59,7 @@ def get_file_info(video_file):
 
     # get size
     size_bytes = int(container["size"])
-    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-    i = int(math.floor(math.log(size_bytes, 1024)))
-    p = math.pow(1024, i)
-    s = round(size_bytes / p, 2)
-    size = "{0} {1}".format(s, size_name[i])
+    size = convert_byte_size(size_bytes)
 
     # get fps
     avg_frame_rate = video_stream["avg_frame_rate"]
@@ -69,8 +73,6 @@ def get_file_info(video_file):
         "size": size,
         "video_codec": video_stream["codec_name"],
         "fps": fps,
-        "url": image_url,
-        "screenshot_url": screenshot_url,
         "format_name": container["format_long_name"],
         "video_bitrate": str(video_stream["bit_rate"]),
         "audio_codec": audio_stream["codec_name"],
@@ -83,10 +85,24 @@ def get_file_info(video_file):
     return info_dict
 
 
+def get_videos(target):
+    # Create a video path list
+    paths = []
+    result = check_output(["find {0} -type f -name '*.mp4'".format(escape(target)), ], shell=True)
+    lines = result.splitlines()
+    for line in lines:
+        paths.append(str(line).strip("b").strip("'"))
+    return paths
+
+
+def remove_folder(target):
+    call('/bin/bash -c "$CMD"', shell=True,
+         env={"CMD": "find {0} -type d -name Metadata -exec rm -rf {{}} \\;".format(target)})
+
+
 # Remove Metadata folders
 print("Removing 'Metadata' folder")
-cmd = "find {0} -type d -name Metadata -exec rm -rf {{}} \\;".format(target_path)
-call('/bin/bash -c "$CMD"', shell=True, env={"CMD": cmd})
+remove_folder(target_path)
 
 # Create torrents
 print("Creating torrent")
@@ -99,14 +115,6 @@ if not torrent_file.is_file():
 else:
     print("{0} is already present. Skipping!".format(torrent_file))
 
-# Create a video path list
-video_paths = []
-cmd = "find {0} -type f -name '*.mp4'".format(target_path)
-res = check_output([cmd, ], shell=True)
-lines = res.splitlines()
-for line in lines:
-    video_paths.append(str(line).strip("b").strip("'"))
-
 # Make screenshots
 print("Making screenshots")
 
@@ -116,30 +124,27 @@ if not screens_folder.is_dir():
 
 info_list = []
 
-for video_path in video_paths:
-    print(video_path)
-
+for video_path in get_videos(target_path):
     video_file_name = video_path.split("/")[-1]
     file_name = video_file_name.strip(".mp4") + ".jpg"
-
     screen_path = Path(screens_folder, file_name)
-
     screenshot_file_name = video_file_name.strip(".mp4") + "_screenshot.jpg"
     screenshot_path = Path(screens_folder, screenshot_file_name)
 
     try:
         # take a preview roster pic
         make_spoiler(video_path, screen_path)
-
         # take a screenshot
         make_screenshot(video_path, screenshot_path)
-
         # upload roster and get url
         image_url = upload_pic(screen_path)
         # upload screenshot and get url
         screenshot_url = upload_pic(screenshot_path)
 
-        info_list.append(get_file_info(video_path))
+        file_info = get_file_info(video_path)
+        file_info.update({"url": image_url,
+                          "screenshot_url": screenshot_url})
+        info_list.append(file_info)
 
     except Exception as e:
         print(e)
@@ -154,22 +159,23 @@ with open(output_file, "a") as file:
     file.write("[spoiler=\"fileinfo\"]" + linesep)
 
     for file_info in info_list:
-        file.write("filename: " + file_info["filename"] + linesep)
-        file.write("size: " + file_info["size"] + linesep)
-        file.write("length: " + file_info["length"] + linesep)
-        file.write("format: " + file_info["format_name"] + linesep)
-
-        file.write("video codec: " + file_info["video_codec"] + linesep)
-        file.write("resolution: " + file_info["resolution"] + linesep)
-        file.write("FPS: " + file_info["fps"] + linesep)
-        file.write("video bit rate: " + file_info["video_bitrate"] + linesep)
-
-        file.write("audio codec: " + file_info["audio_codec"] + linesep)
-        file.write("audio sample rate: " + file_info["audio_sample_rate"] + linesep)
-        file.write("audio channels: " + file_info["audio_channels"] + linesep)
-        file.write("audio channel layout: " + file_info["audio_channel_layout"] + linesep)
-        file.write("audio bit rate: " + file_info["audio_bitrate"] + linesep)
-        file.write(linesep)
+        string = "{0}{1}{2}{3}{4}{5}{6}{7}{8}{9}{10}{11}{12}{13}".format(
+            "filename: " + file_info["filename"] + linesep,
+            "size: " + file_info["size"] + linesep,
+            "length: " + file_info["length"] + linesep,
+            "format: " + file_info["format_name"] + linesep,
+            "video codec: " + file_info["video_codec"] + linesep,
+            "resolution: " + file_info["resolution"] + linesep,
+            "FPS: " + file_info["fps"] + linesep,
+            "video bit rate: " + file_info["video_bitrate"] + linesep,
+            "audio codec: " + file_info["audio_codec"] + linesep,
+            "audio sample rate: " + file_info["audio_sample_rate"] + linesep,
+            "audio channels: " + file_info["audio_channels"] + linesep,
+            "audio channel layout: " + file_info["audio_channel_layout"] + linesep,
+            "audio bit rate: " + file_info["audio_bitrate"] + linesep,
+            linesep
+        )
+        file.write(string)
 
     file.write("[/spoiler]" + linesep)
     file.write("[spoiler=\"pictures\"]" + linesep)
