@@ -3,8 +3,7 @@ import math
 from os import getenv, linesep
 from pathlib import Path
 from subprocess import TimeoutExpired, call, check_output
-
-from torf import Torrent
+from time import sleep
 
 input_folder = getenv("INPUT")
 output_folder = getenv("OUTPUT")
@@ -13,17 +12,21 @@ target_name = target_path.stem
 
 
 def escape(path):
+    """"Inserts a escape character in a path string"""
     return str(path).replace(" ", "\\ ")
 
 
 def upload_pic(path):
+    """"Uploads pics to fastpic.ru"""
     _cmd = "imgupload -s fastpic.ru -cl plain " + escape(path)
     _res = check_output([_cmd, ], shell=True, timeout=300)
     url = str(_res).strip("b").strip("'")
+    sleep(3)
     return url
 
 
 def make_spoiler(source, target):
+    """"Creates a spoiler image using vcsi"""
     if not target.is_file():
         sjabloon = Path("/", "sjabloon")
         font = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
@@ -33,6 +36,7 @@ def make_spoiler(source, target):
 
 
 def make_screenshot(source, target):
+    """""Takes a screenshot in the middle of a video"""
     if not target.is_file():
         sub_cmd = "\"$(bc -l <<< \"$(ffprobe -loglevel error -of csv=p=0 -show_entries format=duration \"$input\")*0.5\")\""
         screenshot_cmd = "input={0}; ffmpeg -ss {1} -i \"$input\" -frames:v 1 {2}".format(
@@ -41,6 +45,7 @@ def make_screenshot(source, target):
 
 
 def convert_byte_size(byte_size):
+    """"Converts b to something readable"""
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(byte_size, 1024)))
     p = math.pow(1024, i)
@@ -49,6 +54,7 @@ def convert_byte_size(byte_size):
 
 
 def get_file_info(video_file):
+    """"Get all info of video file"""
     # get file info json
     _cmd = "ffprobe -v quiet -print_format json -show_format -show_streams {0}".format(escape(video_file))
     json_info = check_output(_cmd, shell=True)
@@ -86,7 +92,7 @@ def get_file_info(video_file):
 
 
 def get_videos(target):
-    # Create a video path list
+    """"Finds all videos and appends their paths to a list"""
     paths = []
     result = check_output(["find {0} -type f -name '*.mp4'".format(escape(target)), ], shell=True)
     lines = result.splitlines()
@@ -96,24 +102,25 @@ def get_videos(target):
 
 
 def remove_folder(target):
+    """""Search and destroy"""
     call('/bin/bash -c "$CMD"', shell=True,
          env={"CMD": "find {0} -type d -name Metadata -exec rm -rf {{}} \\;".format(target)})
 
 
-# Remove Metadata folders
-print("Removing 'Metadata' folder")
-remove_folder(target_path)
-
-# Create torrents
-print("Creating torrent")
-torrent_file = Path(output_folder, "{0}.torrent".format(target_name))
-if not torrent_file.is_file():
-    t = Torrent(path=target_path, trackers=[], comment="")
-    t.private = False
-    t.generate()
-    t.write(torrent_file)
-else:
-    print("{0} is already present. Skipping!".format(torrent_file))
+# # Remove Metadata folders
+# print("Removing 'Metadata' folder")
+# remove_folder(target_path)
+#
+# # Create torrents
+# print("Creating torrent")
+# torrent_file = Path(output_folder, "{0}.torrent".format(target_name))
+# if not torrent_file.is_file():
+#     t = Torrent(path=target_path, trackers=[], comment="")
+#     t.private = true
+#     t.generate()
+#     t.write(torrent_file)
+# else:
+#     print("{0} is already present. Skipping!".format(torrent_file))
 
 # Make screenshots
 print("Making screenshots")
@@ -152,45 +159,43 @@ for video_path in get_videos(target_path):
             break
         continue
 
+# Prepare file
+print("Preparing file")
+content = ""
+
+content += "[spoiler=\"fileinfo\"]" + linesep
+for file_info in info_list:
+    content += "===================================================================================" + linesep
+    content += "filename: " + file_info["filename"] + linesep
+    content += "size: " + file_info["size"] + linesep
+    content += "length: " + file_info["length"] + linesep
+    content += "format: " + file_info["format_name"] + linesep
+    content += "video codec: " + file_info["video_codec"] + linesep
+    content += "resolution: " + file_info["resolution"] + linesep
+    content += "FPS: " + file_info["fps"] + linesep
+    content += "video bit rate: " + file_info["video_bitrate"] + linesep
+    content += linesep
+    content += "audio codec: " + file_info["audio_codec"] + linesep
+    content += "audio sample rate: " + file_info["audio_sample_rate"] + linesep
+    content += "audio channels: " + file_info["audio_channels"] + linesep
+    content += "audio channels: " + file_info["audio_channels"] + linesep
+    content += "audio bit rate: " + file_info["audio_bitrate"] + linesep
+    content += "===================================================================================" + linesep
+content += "[/spoiler]" + linesep
+
+content += "[spoiler=\"pictures\"]" + linesep
+for file_info in info_list:
+    content += "[spoiler=\"{0} | {1} | {2} | {3}\"]".format(
+        file_info["filename"],
+        file_info["length"],
+        file_info["size"],
+        file_info["resolution"]
+    ) + linesep + "[img]{0}[/img]".format(file_info["url"]) + linesep + "[img]{0}[/img]".format(
+        file_info["screenshot_url"]) + linesep + "[img]{0}[/img]".format(file_info["screenshot_url"]) + linesep
+content += "[/spoiler]" + linesep
+
 # write file
 print("Writing file")
 output_file = Path(output_folder, "{0}.txt".format(target_name))
 with open(output_file, "a") as file:
-    file.write("[spoiler=\"fileinfo\"]" + linesep)
-
-    for file_info in info_list:
-        string = "{0}{1}{2}{3}{4}{5}{6}{7}{8}{9}{10}{11}{12}{13}".format(
-            "filename: " + file_info["filename"] + linesep,
-            "size: " + file_info["size"] + linesep,
-            "length: " + file_info["length"] + linesep,
-            "format: " + file_info["format_name"] + linesep,
-            "video codec: " + file_info["video_codec"] + linesep,
-            "resolution: " + file_info["resolution"] + linesep,
-            "FPS: " + file_info["fps"] + linesep,
-            "video bit rate: " + file_info["video_bitrate"] + linesep,
-            "audio codec: " + file_info["audio_codec"] + linesep,
-            "audio sample rate: " + file_info["audio_sample_rate"] + linesep,
-            "audio channels: " + file_info["audio_channels"] + linesep,
-            "audio channel layout: " + file_info["audio_channel_layout"] + linesep,
-            "audio bit rate: " + file_info["audio_bitrate"] + linesep,
-            linesep
-        )
-        file.write(string)
-
-    file.write("[/spoiler]" + linesep)
-    file.write("[spoiler=\"pictures\"]" + linesep)
-
-    for file_info in info_list:
-        file.write("[spoiler=\"{0} | {1} | {2} | {3}\"]".format(
-            file_info["filename"],
-            file_info["length"],
-            file_info["size"],
-            file_info["resolution"]
-        ) + linesep)
-
-        file.write("[img]{0}[/img]".format(file_info["url"]) + linesep)
-        file.write("[img]{0}[/img]".format(file_info["screenshot_url"]) + linesep)
-
-        file.write("[/spoiler]" + linesep)
-
-    file.write("[/spoiler]" + linesep)
+    file.write(content)
